@@ -34,6 +34,10 @@ export const calculateBackgroundPaintingArea = (backgroundClip: BACKGROUND_CLIP,
         return contentBox(element);
     }
 
+    if (backgroundClip === BACKGROUND_CLIP.TEXT /* TEXT */) {
+        return contentBox(element);
+    }
+
     return paddingBox(element);
 };
 

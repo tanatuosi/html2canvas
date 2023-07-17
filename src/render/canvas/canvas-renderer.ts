@@ -176,6 +176,26 @@ export class CanvasRenderer extends Renderer {
     async renderTextNode(text: TextContainer, styles: CSSParsedDeclaration): Promise<void> {
         const [font, fontFamily, fontSize] = this.createFontStyle(styles);
 
+        let adorWidth = 0;
+        let adorLeft: number, adorTop: number, adorHeight: number;
+        for (let xnwi = 0; xnwi < text.textBounds.length; xnwi++) {
+            adorWidth += text.textBounds[xnwi].bounds.width;
+        }
+        if (text.textBounds.length >= 2) {
+            for (let tani = 0; tani < text.textBounds.length; tani++) {
+                if (text.textBounds[tani].text.trim().length > 0 && text.textBounds[tani].text !== '\n') {
+                    adorLeft = text.textBounds[tani].bounds.left;
+                    adorTop = text.textBounds[tani].bounds.top;
+                    adorHeight = text.textBounds[tani].bounds.height;
+                    break;
+                }
+            }
+        } else {
+            adorLeft = text.textBounds[0].bounds.left;
+            adorTop = text.textBounds[0].bounds.top;
+            adorHeight = text.textBounds[0].bounds.height;
+        }
+
         this.ctx.font = font;
 
         this.ctx.direction = styles.direction === DIRECTION.RTL ? 'rtl' : 'ltr';
@@ -188,7 +208,41 @@ export class CanvasRenderer extends Renderer {
             paintOrder.forEach((paintOrderLayer) => {
                 switch (paintOrderLayer) {
                     case PAINT_ORDER_LAYER.FILL:
-                        this.ctx.fillStyle = asString(styles.color);
+                        if (styles.backgroundClip[0] === BACKGROUND_CLIP.TEXT) {
+                            if (styles.backgroundImage[0] === undefined) {
+                                this.ctx.fillStyle = asString(styles.backgroundColor);
+                            } else {
+                                const [lineLength, x0, x1, y0, y1] = calculateGradientDirection(
+                                    (styles.backgroundImage[0] as any).angle || 0,
+                                    adorWidth,
+                                    adorHeight
+                                );
+
+                                const canvas = document.createElement('canvas');
+                                canvas.width = adorWidth;
+                                canvas.height = adorHeight;
+
+                                const xctx = canvas.getContext('2d');
+                                if (xctx) {
+                                    const gradient = xctx.createLinearGradient(
+                                        adorLeft + x0,
+                                        adorTop + y0,
+                                        adorLeft + x1,
+                                        adorTop + y1
+                                    );
+
+                                    processColorStops((styles.backgroundImage[0] as any).stops, lineLength).forEach(
+                                        (colorStop) => {
+                                            gradient.addColorStop(colorStop.stop, asString(colorStop.color));
+                                        }
+                                    );
+
+                                    this.ctx.fillStyle = gradient;
+                                }
+                            }
+                        } else {
+                            this.ctx.fillStyle = asString(styles.color);
+                        }
                         this.renderTextWithLetterSpacing(text, styles.letterSpacing, baseline);
                         const textShadows: TextShadow = styles.textShadow;
 
@@ -606,7 +660,35 @@ export class CanvasRenderer extends Renderer {
                     ) as CanvasPattern;
                     this.renderRepeat(path, pattern, x, y);
                 }
-            } else if (isLinearGradient(backgroundImage)) {
+            } else {
+                if (container.styles.backgroundClip[0] == 3) {
+                    const [path, x, y, width, height] = calculateBackgroundRendering(container, index, [
+                        null,
+                        null,
+                        null
+                    ]);
+                    console.log(path, x, y, width, height);
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+
+                    const ctx = canvas.getContext('2d');
+
+                    if (ctx) {
+                        ctx.globalAlpha = 0;
+                        ctx.fillStyle = '#000000';
+                        ctx.fillRect(0, 0, width, height);
+
+                        if (width > 0 && height > 0) {
+                            const pattern = this.ctx.createPattern(canvas, 'repeat');
+
+                            if (pattern) {
+                                this.renderRepeat(path, pattern, x, y);
+                            }
+                        }
+                    }
+                } else {
+            if (isLinearGradient(backgroundImage)) {
                 const [path, x, y, width, height] = calculateBackgroundRendering(container, index, [null, null, null]);
                 const [lineLength, x0, x1, y0, y1] = calculateGradientDirection(backgroundImage.angle, width, height);
 
@@ -665,6 +747,8 @@ export class CanvasRenderer extends Renderer {
                     }
                 }
             }
+        }
+        }
             index--;
         }
     }
