@@ -614,11 +614,20 @@ export class CanvasRenderer extends Renderer {
         });
     }
 
-    renderRepeat(path: Path[], pattern: CanvasPattern | CanvasGradient, offsetX: number, offsetY: number): void {
+    //添加filter属性针对色相进行处理（目前只处理了色相，其余filter属性不支持）
+    renderRepeat(
+        path: Path[],
+        pattern: CanvasPattern | CanvasGradient,
+        offsetX: number,
+        offsetY: number,
+        filter?: number | string
+    ): void {
         this.path(path);
+        this.ctx.filter = filter && filter !== 'none' ? `hue-rotate(${filter})` : 'none';
         this.ctx.fillStyle = pattern;
         this.ctx.translate(offsetX, offsetY);
         this.ctx.fill();
+        this.ctx.filter = 'none';
         this.ctx.translate(-offsetX, -offsetY);
     }
 
@@ -658,7 +667,8 @@ export class CanvasRenderer extends Renderer {
                         this.resizeImage(image, width, height),
                         'repeat'
                     ) as CanvasPattern;
-                    this.renderRepeat(path, pattern, x, y);
+                    // this.renderRepeat(path, pattern, x, y);
+                    this.renderRepeat(path, pattern, x, y, container.styles.filter);
                 }
             } else {
                 if (container.styles.backgroundClip[0] == 3) {
@@ -667,7 +677,6 @@ export class CanvasRenderer extends Renderer {
                         null,
                         null
                     ]);
-                    console.log(path, x, y, width, height);
                     const canvas = document.createElement('canvas');
                     canvas.width = width;
                     canvas.height = height;
@@ -688,67 +697,83 @@ export class CanvasRenderer extends Renderer {
                         }
                     }
                 } else {
-            if (isLinearGradient(backgroundImage)) {
-                const [path, x, y, width, height] = calculateBackgroundRendering(container, index, [null, null, null]);
-                const [lineLength, x0, x1, y0, y1] = calculateGradientDirection(backgroundImage.angle, width, height);
+                    if (isLinearGradient(backgroundImage)) {
+                        const [path, x, y, width, height] = calculateBackgroundRendering(container, index, [
+                            null,
+                            null,
+                            null
+                        ]);
+                        const [lineLength, x0, x1, y0, y1] = calculateGradientDirection(
+                            backgroundImage.angle,
+                            width,
+                            height
+                        );
 
-                const canvas = document.createElement('canvas');
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
-                const gradient = ctx.createLinearGradient(x0, y0, x1, y1);
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
+                        const gradient = ctx.createLinearGradient(x0, y0, x1, y1);
 
-                processColorStops(backgroundImage.stops, lineLength).forEach((colorStop) =>
-                    gradient.addColorStop(colorStop.stop, asString(colorStop.color))
-                );
+                        processColorStops(backgroundImage.stops, lineLength).forEach((colorStop) =>
+                            gradient.addColorStop(colorStop.stop, asString(colorStop.color))
+                        );
 
-                ctx.fillStyle = gradient;
-                ctx.fillRect(0, 0, width, height);
-                if (width > 0 && height > 0) {
-                    const pattern = this.ctx.createPattern(canvas, 'repeat') as CanvasPattern;
-                    this.renderRepeat(path, pattern, x, y);
-                }
-            } else if (isRadialGradient(backgroundImage)) {
-                const [path, left, top, width, height] = calculateBackgroundRendering(container, index, [
-                    null,
-                    null,
-                    null
-                ]);
-                const position = backgroundImage.position.length === 0 ? [FIFTY_PERCENT] : backgroundImage.position;
-                const x = getAbsoluteValue(position[0], width);
-                const y = getAbsoluteValue(position[position.length - 1], height);
+                        ctx.fillStyle = gradient;
+                        ctx.fillRect(0, 0, width, height);
+                        if (width > 0 && height > 0) {
+                            const pattern = this.ctx.createPattern(canvas, 'repeat') as CanvasPattern;
+                            this.renderRepeat(path, pattern, x, y);
+                        }
+                    } else if (isRadialGradient(backgroundImage)) {
+                        const [path, left, top, width, height] = calculateBackgroundRendering(container, index, [
+                            null,
+                            null,
+                            null
+                        ]);
+                        const position =
+                            backgroundImage.position.length === 0 ? [FIFTY_PERCENT] : backgroundImage.position;
+                        const x = getAbsoluteValue(position[0], width);
+                        const y = getAbsoluteValue(position[position.length - 1], height);
 
-                const [rx, ry] = calculateRadius(backgroundImage, x, y, width, height);
-                if (rx > 0 && ry > 0) {
-                    const radialGradient = this.ctx.createRadialGradient(left + x, top + y, 0, left + x, top + y, rx);
+                        const [rx, ry] = calculateRadius(backgroundImage, x, y, width, height);
+                        if (rx > 0 && ry > 0) {
+                            const radialGradient = this.ctx.createRadialGradient(
+                                left + x,
+                                top + y,
+                                0,
+                                left + x,
+                                top + y,
+                                rx
+                            );
 
-                    processColorStops(backgroundImage.stops, rx * 2).forEach((colorStop) =>
-                        radialGradient.addColorStop(colorStop.stop, asString(colorStop.color))
-                    );
+                            processColorStops(backgroundImage.stops, rx * 2).forEach((colorStop) =>
+                                radialGradient.addColorStop(colorStop.stop, asString(colorStop.color))
+                            );
 
-                    this.path(path);
-                    this.ctx.fillStyle = radialGradient;
-                    if (rx !== ry) {
-                        // transforms for elliptical radial gradient
-                        const midX = container.bounds.left + 0.5 * container.bounds.width;
-                        const midY = container.bounds.top + 0.5 * container.bounds.height;
-                        const f = ry / rx;
-                        const invF = 1 / f;
+                            this.path(path);
+                            this.ctx.fillStyle = radialGradient;
+                            if (rx !== ry) {
+                                // transforms for elliptical radial gradient
+                                const midX = container.bounds.left + 0.5 * container.bounds.width;
+                                const midY = container.bounds.top + 0.5 * container.bounds.height;
+                                const f = ry / rx;
+                                const invF = 1 / f;
 
-                        this.ctx.save();
-                        this.ctx.translate(midX, midY);
-                        this.ctx.transform(1, 0, 0, f, 0, 0);
-                        this.ctx.translate(-midX, -midY);
+                                this.ctx.save();
+                                this.ctx.translate(midX, midY);
+                                this.ctx.transform(1, 0, 0, f, 0, 0);
+                                this.ctx.translate(-midX, -midY);
 
-                        this.ctx.fillRect(left, invF * (top - midY) + midY, width, height * invF);
-                        this.ctx.restore();
-                    } else {
-                        this.ctx.fill();
+                                this.ctx.fillRect(left, invF * (top - midY) + midY, width, height * invF);
+                                this.ctx.restore();
+                            } else {
+                                this.ctx.fill();
+                            }
+                        }
                     }
                 }
             }
-        }
-        }
             index--;
         }
     }
